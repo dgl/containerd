@@ -53,6 +53,36 @@ func WithNewSnapshot(id string, i containerd.Image, opts ...snapshots.Opt) conta
 	}
 }
 
+// WithRemappedSnapshot wraps `containerd.WithRemappedSnapshot` so that if creating the
+// snapshot fails we make sure the image is actually unpacked and retry.
+func WithRemappedSnapshot(id string, i containerd.Image, uid, gid uint32) containerd.NewContainerOpts {
+	// XXX: containerd.WithRemappedSnapshot takes only a single UID/GID,
+	// instead of a []runtimespec.LinuxIDMapping. Therefore, we also take a
+	// single UID/GID param and manage only simple mappings (if the slice
+	// has more than one element, we can't map it correctly).
+	// We expose this simple interface so callers are aware of this
+	// liimtation and doesn't cause a surprise.
+	// In the future, we can improve upon that limitation.
+	// XXX: rata. We could use the length to check if IDs not mapped are
+	// used and fail. But not doing it (and therefore showing them as the
+	// overflow uid/gid) is better, as we can experiment with very short
+	// mappings without pods failing to start.
+	f := containerd.WithRemappedSnapshot(id, i, uid, gid)
+	return func(ctx context.Context, client *containerd.Client, c *containers.Container) error {
+		if err := f(ctx, client, c); err != nil {
+			if !errdefs.IsNotFound(err) {
+				return err
+			}
+
+			if err := i.Unpack(ctx, c.Snapshotter); err != nil {
+				return fmt.Errorf("error unpacking image: %w", err)
+			}
+			return f(ctx, client, c)
+		}
+		return nil
+	}
+}
+
 // WithVolumes copies ownership of volume in rootfs to its corresponding host path.
 // It doesn't update runtime spec.
 // The passed in map is a host path to container path map for all volumes.

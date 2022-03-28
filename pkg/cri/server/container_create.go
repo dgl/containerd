@@ -40,6 +40,7 @@ import (
 	containerstore "github.com/containerd/containerd/pkg/cri/store/container"
 	"github.com/containerd/containerd/pkg/cri/util"
 	ctrdutil "github.com/containerd/containerd/pkg/cri/util"
+	"github.com/containerd/containerd/snapshots"
 )
 
 func init() {
@@ -186,6 +187,23 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 	// Grab any platform specific snapshotter opts.
 	sOpts := snapshotterOpts(c.config.ContainerdConfig.Snapshotter, config)
 
+	// Here we validate userns config has exactly 1 mapping line, if userns
+	// is present. Therefore, it is safe to access uids[0] and gids[0]
+	// later if mode is POD.
+	nsOpts := config.GetLinux().GetSecurityContext().GetNamespaceOptions()
+	uids, gids, err := c.validateUserns(nsOpts.GetUsernsOptions())
+	if err != nil {
+		// XXX: rata. Seria comodo wrapear aca, para saber cuando son
+		// las distintas funciones las que fallan?
+		return nil, err
+	}
+
+	sOpts = append(sOpts, snapshots.WithLabels(snapshots.FilterInheritedLabels(config.Annotations)))
+	snapshotterOpt := customopts.WithNewSnapshot(id, containerdImage, sOpts...)
+	if nsOpts.GetUsernsOptions() != nil && nsOpts.GetUsernsOptions().GetMode() == runtime.NamespaceMode_POD {
+		snapshotterOpt = customopts.WithRemappedSnapshot(id, containerdImage, uids[0].HostID, gids[0].HostID)
+	}
+
 	// Set snapshotter before any other options.
 	opts := []containerd.NewContainerOpts{
 		containerd.WithSnapshotter(c.runtimeSnapshotter(ctx, ociRuntime)),
@@ -194,7 +212,8 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 		// the runtime (runc) a chance to modify (e.g. to create mount
 		// points corresponding to spec.Mounts) before making the
 		// rootfs readonly (requested by spec.Root.Readonly).
-		customopts.WithNewSnapshot(id, containerdImage, sOpts...),
+		//customopts.WithNewSnapshot(id, containerdImage, sOpts...),
+		snapshotterOpt,
 	}
 	if len(volumeMounts) > 0 {
 		mountMap := make(map[string]string)

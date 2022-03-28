@@ -128,7 +128,7 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 	}
 	task, err := container.NewTask(ctx, ioCreation, taskOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create containerd task: %w", err)
+		return nil, fmt.Errorf("failed to create containerd task 1: %w", err)
 	}
 	defer func() {
 		if retErr != nil {

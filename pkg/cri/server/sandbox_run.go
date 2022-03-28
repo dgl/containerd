@@ -145,16 +145,32 @@ func (c *criService) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandbox
 		return nil, fmt.Errorf("failed to generate sandbox container spec options: %w", err)
 	}
 
+	// Here we validate userns config has exactly 1 mapping line, if userns
+	// is present. Therefore, it is safe to access uids[0] and gids[0]
+	// later if mode is POD.
 	sandboxLabels := buildLabels(config.Labels, image.ImageSpec.Config.Labels, containerKindSandbox)
+	nsOpts := config.GetLinux().GetSecurityContext().GetNamespaceOptions()
+	uids, gids, err := c.validateUserns(nsOpts.GetUsernsOptions())
+	if err != nil {
+		// XXX: rata. Seria comodo wrapear aca, para saber cuando son
+		// las distintas funciones las que fallan?
+		return nil, err
+	}
+
+	containerOpt := snapshots.WithLabels(snapshots.FilterInheritedLabels(config.Annotations))
+	snapshotterOpt := customopts.WithNewSnapshot(id, containerdImage, containerOpt)
+	if nsOpts.GetUsernsOptions() != nil && nsOpts.GetUsernsOptions().GetMode() == runtime.NamespaceMode_POD {
+		snapshotterOpt = customopts.WithRemappedSnapshot(id, containerdImage, uids[0].HostID, gids[0].HostID)
+	}
 
 	runtimeOpts, err := generateRuntimeOptions(ociRuntime, c.config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate runtime options: %w", err)
 	}
-	snapshotterOpt := snapshots.WithLabels(snapshots.FilterInheritedLabels(config.Annotations))
+
 	opts := []containerd.NewContainerOpts{
-		containerd.WithSnapshotter(c.runtimeSnapshotter(ctx, ociRuntime)),
-		customopts.WithNewSnapshot(id, containerdImage, snapshotterOpt),
+		containerd.WithSnapshotter(c.config.ContainerdConfig.Snapshotter),
+		snapshotterOpt,
 		containerd.WithSpec(spec, specOpts...),
 		containerd.WithContainerLabels(sandboxLabels),
 		containerd.WithContainerExtension(sandboxMetadataExtension, &sandbox.Metadata),
@@ -384,6 +400,7 @@ func (c *criService) getNetworkPlugin(runtimeClass string) cni.CNI {
 
 // setupPodNetwork setups up the network for a pod
 func (c *criService) setupPodNetwork(ctx context.Context, sandbox *sandboxstore.Sandbox) error {
+
 	var (
 		id        = sandbox.ID
 		config    = sandbox.Config
@@ -401,7 +418,7 @@ func (c *criService) setupPodNetwork(ctx context.Context, sandbox *sandboxstore.
 	log.G(ctx).WithField("podsandboxid", id).Debugf("begin cni setup")
 	result, err := netPlugin.Setup(ctx, id, path, opts...)
 	if err != nil {
-		return err
+		return fmt.Errorf("XXX: rata. Error: %w", err)
 	}
 	logDebugCNIResult(ctx, id, result)
 	// Check if the default interface has IP config

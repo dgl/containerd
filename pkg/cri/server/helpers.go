@@ -42,6 +42,7 @@ import (
 
 	runhcsoptions "github.com/Microsoft/hcsshim/cmd/containerd-shim-runhcs-v1/options"
 	imagedigest "github.com/opencontainers/go-digest"
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pelletier/go-toml"
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
@@ -265,6 +266,95 @@ func (c *criService) validateTargetContainer(sandboxID, targetContainerID string
 	}
 
 	return targetContainer, nil
+}
+
+func (c *criService) praseUsernsIDs(runtimeIDMap []*runtime.IDMapping) ([]specs.LinuxIDMapping, error) {
+	var m []specs.LinuxIDMapping
+
+	if len(runtimeIDMap) == 0 {
+		return m, nil
+	}
+
+	if len(runtimeIDMap) > 1 {
+		// We only accept 1 line, because containerd.WithRemappedSnapshot() only supports that.
+		return m, fmt.Errorf("only one mapping line supported, got %v mapping lines", len(runtimeIDMap))
+	}
+
+	// We know len is 1 now.
+	if runtimeIDMap[0] == nil {
+		return m, nil
+	}
+	uidMap := *runtimeIDMap[0]
+
+	if uidMap.Length < 1 {
+		return m, fmt.Errorf("invalid mapping length: %v", uidMap.Length)
+	}
+
+	m = []specs.LinuxIDMapping{
+		specs.LinuxIDMapping{
+			ContainerID: uidMap.ContainerId,
+			HostID:      uidMap.HostId,
+			Size:        uidMap.Length,
+		},
+	}
+
+	return m, nil
+}
+
+func (c *criService) parseUsernsAllIDs(UIDMap, GIDMap []*runtime.IDMapping) (uids, gids []specs.LinuxIDMapping, err error) {
+	if uids, err = c.praseUsernsIDs(UIDMap); err != nil {
+		err = fmt.Errorf("UID mapping: %w", err)
+		return
+	}
+
+	if gids, err = c.praseUsernsIDs(GIDMap); err != nil {
+		err = fmt.Errorf("GID mapping: %w", err)
+		return
+	}
+
+	return
+}
+
+func (c *criService) validateUserns(userns *runtime.UserNamespace) (retUids, retGids []specs.LinuxIDMapping, retErr error) {
+	if userns == nil {
+		// XXX: rata. What should we do in this case?
+		// If userns is not set, the kubelet doesn't support this option
+		// and we should just fallback to no userns. This is completely
+		// valid.
+		return
+	}
+
+	uidRuntimeMap := userns.GetUids()
+	gidRuntimeMap := userns.GetGids()
+
+	uids, gids, err := c.parseUsernsAllIDs(uidRuntimeMap, gidRuntimeMap)
+	if err != nil {
+		retErr = fmt.Errorf("failed to parse user namespace mappings: %w", err)
+		return
+	}
+
+	switch mode := userns.GetMode(); mode {
+	case runtime.NamespaceMode_NODE:
+		if len(uids) != 0 || len(gids) != 0 {
+			// XXX: rata. TODO try this prints the mode name. But
+			// looking at generated code, seems it will.
+			retErr = fmt.Errorf("can't use user namespace mode %q with mappings. Got %v UID mappings and %v GID mappings", mode, len(uids), len(gids))
+			return
+		}
+	case runtime.NamespaceMode_POD:
+		// This is valid, we will handle it in WithPodNamespaces().
+		if len(uids) == 0 || len(gids) == 0 {
+			retErr = fmt.Errorf("can't use user namespace mode %q without mappings", mode)
+			return
+		}
+	default:
+		// XXX: rata. TODO try this prints the mode name. But looking at
+		// generated code, seems it will.
+		retErr = fmt.Errorf("not supported user namespace mode: %q", mode)
+		return
+	}
+
+	return uids, gids, nil
 }
 
 // isInCRIMounts checks whether a destination is in CRI mount list.
