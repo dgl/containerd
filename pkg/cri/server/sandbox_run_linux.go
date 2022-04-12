@@ -364,3 +364,18 @@ func (c *criService) taskOpts(runtimeType string) []containerd.NewTaskOpts {
 
 	return taskOpts
 }
+
+// XXX: rata. Use containerOpts() to get the WithRemappedSnapshot from
+// sandox_run.go and other platform-independant places and add a wrapper for
+// windows that returns the nil slice.
+// It is not obvious if we can change WithRemappedSnapshot() to work appended
+// to:
+//	customopts.WithNewSnapshot(id, containerdImage, containerOpt)
+//
+// That we use today. It will be great if we can re-write it to be appended to
+// that and just work. Otherwise, this containerOpts() pattern doesn't seem very
+// clean and we will need to override the first snapshot thingy with what this
+// function returns. Not nice...
+func (c *criService) containerOpts(runtimeType string) []containerd.NewTaskOpts {
+	return nil
+}

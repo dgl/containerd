@@ -55,6 +55,10 @@ func WithNewSnapshot(id string, i containerd.Image, opts ...snapshots.Opt) conta
 
 // WithRemappedSnapshot wraps `containerd.WithRemappedSnapshot` so that if creating the
 // snapshot fails we make sure the image is actually unpacked and retry.
+// XXX: rata. containerd.WithRemappedSnapshot() is only present on unix systems!
+// We should probably see how to move callers of this functions to linux/unix
+// only! Currently we are calling it from generic places shared with windows
+// code!
 func WithRemappedSnapshot(id string, i containerd.Image, uid, gid uint32) containerd.NewContainerOpts {
 	// XXX: containerd.WithRemappedSnapshot takes only a single UID/GID,
 	// instead of a []runtimespec.LinuxIDMapping. Therefore, we also take a
@@ -178,5 +182,12 @@ func copyExistingContents(source, destination string) error {
 	if len(dstList) != 0 {
 		return fmt.Errorf("volume at %q is not initially empty", destination)
 	}
-	return fs.CopyDir(destination, source, fs.WithXAttrExclude("security.selinux"))
+	// XXX: rata. TODO see exactly which overlayfs attrs we need to exclude.
+	// Also, do we need to exclude trusted.overlay.origin,
+	// trusted.overlay.metacopy, etc. or just trusted.overlay excludes them
+	// all?
+	// Having a quick look at the code, probabably all. But the simplest way
+	// is to try it out with some real code/image.
+	// https://github.com/containerd/continuity/blob/main/fs/copy.go
+	return fs.CopyDir(destination, source, fs.WithXAttrExclude("security.selinux"), fs.WithXAttrExclude("user.overlay"), fs.WithXAttrExclude("trusted.overlay"))
 }
