@@ -36,8 +36,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"runtime"
-	"sync"
 
 	"github.com/containerd/containerd/mount"
 	cnins "github.com/containernetworking/plugins/pkg/ns"
@@ -48,9 +46,9 @@ import (
 // Some of the following functions are migrated from
 // https://github.com/containernetworking/plugins/blob/master/pkg/testutils/netns_linux.go
 
-// newNS creates a new persistent (bind-mounted) network namespace and returns the
-// path to the network namespace.
-func newNS(baseDir string) (nsPath string, err error) {
+// newNS creates a new persistent (bind-mounted) network namespace from
+// /proc/<pid>/ns/net and returns the path to the network namespace.
+func newNS(baseDir string, pid uint32) (nsPath string, err error) {
 	b := make([]byte, 16)
 
 	_, err = rand.Read(b)
@@ -81,46 +79,12 @@ func newNS(baseDir string) (nsPath string, err error) {
 		}
 	}()
 
-	var wg sync.WaitGroup
-	wg.Add(1)
+	procNsPath := getNetNSPathFromPID(pid)
 
-	// do namespace work in a dedicated goroutine, so that we can safely
-	// Lock/Unlock OSThread without upsetting the lock/unlock state of
-	// the caller of this function
-	go (func() {
-		defer wg.Done()
-		runtime.LockOSThread()
-		// Don't unlock. By not unlocking, golang will kill the OS thread when the
-		// goroutine is done (for go1.10+)
-
-		var origNS cnins.NetNS
-		origNS, err = cnins.GetNS(getCurrentThreadNetNSPath())
-		if err != nil {
-			return
-		}
-		defer origNS.Close()
-
-		// create a new netns on the current thread
-		err = unix.Unshare(unix.CLONE_NEWNET)
-		if err != nil {
-			return
-		}
-
-		// Put this thread back to the orig ns, since it might get reused (pre go1.10)
-		defer origNS.Set() // nolint: errcheck
-
-		// bind mount the netns from the current thread (from /proc) onto the
-		// mount point. This causes the namespace to persist, even when there
-		// are no threads in the ns.
-		err = unix.Mount(getCurrentThreadNetNSPath(), nsPath, "none", unix.MS_BIND, "")
-		if err != nil {
-			err = fmt.Errorf("failed to bind mount ns at %s: %w", nsPath, err)
-		}
-	})()
-	wg.Wait()
-
-	if err != nil {
-		return "", fmt.Errorf("failed to create namespace: %w", err)
+	// bind mount the netns onto the mount point. This causes the namespace
+	// to persist, even when there are no threads in the ns.
+	if err = unix.Mount(procNsPath, nsPath, "none", unix.MS_BIND, ""); err != nil {
+		return "", fmt.Errorf("failed to bind mount ns src: %v at %s: %w", procNsPath, nsPath, err)
 	}
 
 	return nsPath, nil
@@ -147,12 +111,8 @@ func unmountNS(path string) error {
 	return nil
 }
 
-// getCurrentThreadNetNSPath copied from pkg/ns
-func getCurrentThreadNetNSPath() string {
-	// /proc/self/ns/net returns the namespace of the main thread, not
-	// of whatever thread this goroutine is running on.  Make sure we
-	// use the thread's net namespace since the thread is switching around
-	return fmt.Sprintf("/proc/%d/task/%d/ns/net", os.Getpid(), unix.Gettid())
+func getNetNSPathFromPID(pid uint32) string {
+	return fmt.Sprintf("/proc/%d/ns/net", pid)
 }
 
 // NetNS holds network namespace.
@@ -160,9 +120,10 @@ type NetNS struct {
 	path string
 }
 
-// NewNetNS creates a network namespace.
-func NewNetNS(baseDir string) (*NetNS, error) {
-	path, err := newNS(baseDir)
+// NewNetNS creates a new persistent (bind-mounted) network namespace from
+// /proc/pid/ns/net.
+func NewNetNS(baseDir string, pid uint32) (*NetNS, error) {
+	path, err := newNS(baseDir, pid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup netns: %w", err)
 	}

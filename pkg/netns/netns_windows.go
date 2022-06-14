@@ -23,8 +23,11 @@ type NetNS struct {
 	path string
 }
 
-// NewNetNS creates a network namespace for the sandbox
-func NewNetNS(baseDir string) (*NetNS, error) {
+// NewNetNS creates a network namespace for the sandbox. Pid is ignored on
+// windows.
+// XXX: rata. Here I need help to know how to retrieve the hcnNamespace.Id
+// created by the OCI runtime when no path is specified.
+func NewNetNS(baseDir string, pid uint32) (*NetNS, error) {
 	temp := hcn.HostComputeNamespace{}
 	hcnNamespace, err := temp.Create()
 	if err != nil {

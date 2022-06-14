@@ -94,7 +94,6 @@ func getRunPodSandboxTestData() (*runtime.PodSandboxConfig, *imagespec.ImageConf
 
 func TestLinuxSandboxContainerSpec(t *testing.T) {
 	testID := "test-id"
-	nsPath := "test-cni"
 	for desc, test := range map[string]struct {
 		configChange func(*runtime.PodSandboxConfig)
 		specCheck    func(*testing.T, *runtimespec.Spec)
@@ -106,7 +105,6 @@ func TestLinuxSandboxContainerSpec(t *testing.T) {
 				require.NotNil(t, spec.Linux)
 				assert.Contains(t, spec.Linux.Namespaces, runtimespec.LinuxNamespace{
 					Type: runtimespec.NetworkNamespace,
-					Path: nsPath,
 				})
 				assert.Contains(t, spec.Linux.Namespaces, runtimespec.LinuxNamespace{
 					Type: runtimespec.UTSNamespace,
@@ -243,7 +241,7 @@ func TestLinuxSandboxContainerSpec(t *testing.T) {
 			if test.configChange != nil {
 				test.configChange(config)
 			}
-			spec, err := c.sandboxContainerSpec(testID, config, imageConfig, nsPath, nil)
+			spec, err := c.sandboxContainerSpec(testID, config, imageConfig, nil)
 			if test.expectErr {
 				assert.Error(t, err)
 				assert.Nil(t, spec)
@@ -511,7 +509,7 @@ func TestSandboxDisableCgroup(t *testing.T) {
 	config, imageConfig, _ := getRunPodSandboxTestData()
 	c := newTestCRIService()
 	c.config.DisableCgroup = true
-	spec, err := c.sandboxContainerSpec("test-id", config, imageConfig, "test-cni", []string{})
+	spec, err := c.sandboxContainerSpec("test-id", config, imageConfig, []string{})
 	require.NoError(t, err)
 
 	t.Log("resource limit should not be set")

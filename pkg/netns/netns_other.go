@@ -30,8 +30,9 @@ type NetNS struct {
 	path string
 }
 
-// NewNetNS creates a network namespace.
-func NewNetNS(baseDir string) (*NetNS, error) {
+// NewNetNS creates a new persistent (bind-mounted) network namespace from
+// /proc/pid/ns/net.
+func NewNetNS(baseDir string, pid uint32) (*NetNS, error) {
 	return nil, errNotImplementedOnUnix
 }
 

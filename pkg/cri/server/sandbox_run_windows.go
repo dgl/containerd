@@ -31,7 +31,7 @@ import (
 )
 
 func (c *criService) sandboxContainerSpec(id string, config *runtime.PodSandboxConfig,
-	imageConfig *imagespec.ImageConfig, nsPath string, runtimePodAnnotations []string) (*runtimespec.Spec, error) {
+	imageConfig *imagespec.ImageConfig, runtimePodAnnotations []string) (*runtimespec.Spec, error) {
 	// Creates a spec Generator with the default spec.
 	specOpts := []oci.SpecOpts{
 		oci.WithEnv(imageConfig.Env),
@@ -51,7 +51,11 @@ func (c *criService) sandboxContainerSpec(id string, config *runtime.PodSandboxC
 		// Clear the root location since hcsshim expects it.
 		// NOTE: readonly rootfs doesn't work on windows.
 		customopts.WithoutRoot,
-		customopts.WithWindowsNetworkNamespace(nsPath),
+		// Windows uses the hostNetwork, so empty string here.
+		// XXX: rata. This is false! I need to pass it here, probably?
+		// I need to add back the netNs path, probably. But we don't
+		// have it if the OCI runtime creates one for us... :-/
+		customopts.WithWindowsNetworkNamespace(""),
 	)
 
 	specOpts = append(specOpts, customopts.WithWindowsDefaultSandboxShares)

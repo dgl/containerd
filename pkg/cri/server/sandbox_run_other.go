@@ -28,7 +28,7 @@ import (
 )
 
 func (c *criService) sandboxContainerSpec(id string, config *runtime.PodSandboxConfig,
-	imageConfig *imagespec.ImageConfig, nsPath string, runtimePodAnnotations []string) (_ *runtimespec.Spec, retErr error) {
+	imageConfig *imagespec.ImageConfig, runtimePodAnnotations []string) (_ *runtimespec.Spec, retErr error) {
 	return c.runtimeSpec(id, "")
 }
 
