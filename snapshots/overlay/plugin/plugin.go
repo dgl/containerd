@@ -41,6 +41,7 @@ func init() {
 		Config: &Config{},
 		InitFn: func(ic *plugin.InitContext) (interface{}, error) {
 			ic.Meta.Platforms = append(ic.Meta.Platforms, platforms.DefaultSpec())
+			ic.Meta.Capabilities = []string{"remap-ids"}
 
 			config, ok := ic.Config.(*Config)
 			if !ok {

@@ -223,6 +223,12 @@ func WithNewSnapshot(id string, i Image, opts ...snapshots.Opt) NewContainerOpts
 		if err != nil {
 			return err
 		}
+
+		parent, err = resolveSnapshotOptions(ctx, client, c.Snapshotter, s, parent, opts...)
+		if err != nil {
+			return err
+		}
+
 		if _, err := s.Prepare(ctx, id, parent, opts...); err != nil {
 			return err
 		}
@@ -264,6 +270,10 @@ func WithNewSnapshotView(id string, i Image, opts ...snapshots.Opt) NewContainer
 			return err
 		}
 		s, err := client.getSnapshotter(ctx, c.Snapshotter)
+		if err != nil {
+			return err
+		}
+		parent, err = resolveSnapshotOptions(ctx, client, c.Snapshotter, s, parent, opts...)
 		if err != nil {
 			return err
 		}

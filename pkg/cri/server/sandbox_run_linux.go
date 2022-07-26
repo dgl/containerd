@@ -35,6 +35,7 @@ import (
 	customopts "github.com/containerd/containerd/pkg/cri/opts"
 	osinterface "github.com/containerd/containerd/pkg/os"
 	"github.com/containerd/containerd/pkg/userns"
+	"github.com/containerd/containerd/snapshots"
 )
 
 func (c *criService) sandboxContainerSpec(id string, config *runtime.PodSandboxConfig,
@@ -95,7 +96,7 @@ func (c *criService) sandboxContainerSpec(id string, config *runtime.PodSandboxC
 	}
 
 	usernsOpts := nsOptions.GetUsernsOptions()
-	uids, gids, err := c.validateUserns(usernsOpts)
+	uids, gids, err := validateUserns(usernsOpts)
 	if err != nil {
 		// XXX: rata. Seria comodo wrapear aca, para saber cuando son
 		// las distintas funciones las que fallan?
@@ -365,17 +366,22 @@ func (c *criService) taskOpts(runtimeType string) []containerd.NewTaskOpts {
 	return taskOpts
 }
 
-// XXX: rata. Use containerOpts() to get the WithRemappedSnapshot from
-// sandox_run.go and other platform-independant places and add a wrapper for
-// windows that returns the nil slice.
-// It is not obvious if we can change WithRemappedSnapshot() to work appended
-// to:
-//	customopts.WithNewSnapshot(id, containerdImage, containerOpt)
-//
-// That we use today. It will be great if we can re-write it to be appended to
-// that and just work. Otherwise, this containerOpts() pattern doesn't seem very
-// clean and we will need to override the first snapshot thingy with what this
-// function returns. Not nice...
-func (c *criService) containerOpts(runtimeType string) []containerd.NewTaskOpts {
-	return nil
+func (c *criService) containerOpts(config *runtime.PodSandboxConfig) ([]snapshots.Opt, error) {
+	// Here we validate userns config has exactly 1 mapping line, if userns
+	// is present. Therefore, it is safe to access uids[0] and gids[0]
+	// later if mode is POD.
+	nsOpts := config.GetLinux().GetSecurityContext().GetNamespaceOptions()
+	uids, gids, err := validateUserns(nsOpts.GetUsernsOptions())
+	if err != nil {
+		// XXX: rata. Seria comodo wrapear aca, para saber cuando son
+		// las distintas funciones las que fallan?
+		return nil, err
+	}
+	snapshotterOpts := []snapshots.Opt{}
+	if nsOpts.GetUsernsOptions() != nil && nsOpts.GetUsernsOptions().GetMode() == runtime.NamespaceMode_POD {
+		snapshotterOpts = append(snapshotterOpts,
+				containerd.WithRemapperLabels(0, uids[0].HostID, 0, gids[0].HostID, uids[0].Size))
+	}
+
+	return snapshotterOpts, nil
 }

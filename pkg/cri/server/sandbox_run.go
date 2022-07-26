@@ -145,23 +145,15 @@ func (c *criService) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandbox
 		return nil, fmt.Errorf("failed to generate sandbox container spec options: %w", err)
 	}
 
-	// Here we validate userns config has exactly 1 mapping line, if userns
-	// is present. Therefore, it is safe to access uids[0] and gids[0]
-	// later if mode is POD.
 	sandboxLabels := buildLabels(config.Labels, image.ImageSpec.Config.Labels, containerKindSandbox)
-	nsOpts := config.GetLinux().GetSecurityContext().GetNamespaceOptions()
-	uids, gids, err := c.validateUserns(nsOpts.GetUsernsOptions())
+
+	containerOpts := []snapshots.Opt{snapshots.WithLabels(snapshots.FilterInheritedLabels(config.Annotations))}
+	extraContainerOpts, err := c.containerOpts(config)
 	if err != nil {
-		// XXX: rata. Seria comodo wrapear aca, para saber cuando son
-		// las distintas funciones las que fallan?
 		return nil, err
 	}
-
-	containerOpt := snapshots.WithLabels(snapshots.FilterInheritedLabels(config.Annotations))
-	snapshotterOpt := customopts.WithNewSnapshot(id, containerdImage, containerOpt)
-	if nsOpts.GetUsernsOptions() != nil && nsOpts.GetUsernsOptions().GetMode() == runtime.NamespaceMode_POD {
-		snapshotterOpt = customopts.WithRemappedSnapshot(id, containerdImage, uids[0].HostID, gids[0].HostID)
-	}
+	containerOpts = append(containerOpts, extraContainerOpts...)
+	snapshotterOpt := customopts.WithNewSnapshot(id, containerdImage, containerOpts...)
 
 	runtimeOpts, err := generateRuntimeOptions(ociRuntime, c.config)
 	if err != nil {

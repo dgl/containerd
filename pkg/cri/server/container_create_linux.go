@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/containerd/cgroups"
+	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/contrib/apparmor"
 	"github.com/containerd/containerd/contrib/seccomp"
 	"github.com/containerd/containerd/oci"
@@ -314,7 +315,7 @@ func (c *criService) containerSpec(
 	// XXX: rata. Here we should check the uid/gid mappings are things that
 	// we can handle: only one line. In the future we should check the
 	// length too.
-	uids, gids, err := c.validateUserns(nsOpts.GetUsernsOptions())
+	uids, gids, err := validateUserns(nsOpts.GetUsernsOptions())
 	if err != nil {
 		// XXX: rata. Seria comodo wrapear aca, para saber cuando son
 		// las distintas funciones las que fallan?
@@ -611,27 +612,21 @@ func generateUserString(username string, uid, gid *runtime.Int64Value) (string, 
 }
 
 // snapshotterOpts returns any Linux specific snapshotter options for the rootfs snapshot
-func snapshotterOpts(snapshotterName string, config *runtime.ContainerConfig) []snapshots.Opt {
-	// XXX: rata. TODO: update this comment and logic a little bit.
-
-	return []snapshots.Opt{}
-
+func snapshotterOpts(snapshotterName string, config *runtime.ContainerConfig) ([]snapshots.Opt, error) {
 	// Here we validate userns config has exactly 1 mapping line, if userns
 	// is present. Therefore, it is safe to access uids[0] and gids[0]
 	// later if mode is POD.
-	//nsOpts := config.GetLinux().GetSecurityContext().GetNamespaceOptions()
-	//uids, gids, err := c.validateUserns(nsOpts.GetUsernsOptions())
-	//if err != nil {
-	//	// XXX: rata. Seria comodo wrapear aca, para saber cuando son
-	//	// las distintas funciones las que fallan?
-	//	return nil, err
-	//}
+	nsOpts := config.GetLinux().GetSecurityContext().GetNamespaceOptions()
+	uids, gids, err := validateUserns(nsOpts.GetUsernsOptions())
+	if err != nil {
+		// XXX: rata. Seria comodo wrapear aca, para saber cuando son
+	        // las distintas funciones las que fallan?
+		return nil, err
+	}
 
-	//containerOpt := snapshots.WithLabels(snapshots.FilterInheritedLabels(config.Annotations))
-	//snapshotterOpt := customopts.WithNewSnapshot(id, containerdImage, containerOpt)
-	//if nsOpts.GetUsernsOptions() != nil && nsOpts.GetUsernsOptions().GetMode() == runtime.NamespaceMode_POD {
-	//	snapshotterOpt = customopts.WithRemappedSnapshot(id, containerdImage, uids[0].HostID, gids[0].HostID)
-	//}
-
-	//return sOpts
+	snapshotOpt := []snapshots.Opt{}
+	if nsOpts.GetUsernsOptions() != nil && nsOpts.GetUsernsOptions().GetMode() == runtime.NamespaceMode_POD {
+		snapshotOpt = append(snapshotOpt, containerd.WithRemapperLabels(0, uids[0].HostID, 0, gids[0].HostID, uids[0].Size))
+	}
+	return snapshotOpt, nil
 }

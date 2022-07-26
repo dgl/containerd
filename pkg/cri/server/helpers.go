@@ -268,7 +268,7 @@ func (c *criService) validateTargetContainer(sandboxID, targetContainerID string
 	return targetContainer, nil
 }
 
-func (c *criService) praseUsernsIDs(runtimeIDMap []*runtime.IDMapping) ([]specs.LinuxIDMapping, error) {
+func parseUsernsIDs(runtimeIDMap []*runtime.IDMapping) ([]specs.LinuxIDMapping, error) {
 	var m []specs.LinuxIDMapping
 
 	if len(runtimeIDMap) == 0 {
@@ -301,13 +301,13 @@ func (c *criService) praseUsernsIDs(runtimeIDMap []*runtime.IDMapping) ([]specs.
 	return m, nil
 }
 
-func (c *criService) parseUsernsAllIDs(UIDMap, GIDMap []*runtime.IDMapping) (uids, gids []specs.LinuxIDMapping, err error) {
-	if uids, err = c.praseUsernsIDs(UIDMap); err != nil {
+func parseUsernsAllIDs(UIDMap, GIDMap []*runtime.IDMapping) (uids, gids []specs.LinuxIDMapping, err error) {
+	if uids, err = parseUsernsIDs(UIDMap); err != nil {
 		err = fmt.Errorf("UID mapping: %w", err)
 		return
 	}
 
-	if gids, err = c.praseUsernsIDs(GIDMap); err != nil {
+	if gids, err = parseUsernsIDs(GIDMap); err != nil {
 		err = fmt.Errorf("GID mapping: %w", err)
 		return
 	}
@@ -315,7 +315,7 @@ func (c *criService) parseUsernsAllIDs(UIDMap, GIDMap []*runtime.IDMapping) (uid
 	return
 }
 
-func (c *criService) validateUserns(userns *runtime.UserNamespace) (retUids, retGids []specs.LinuxIDMapping, retErr error) {
+func validateUserns(userns *runtime.UserNamespace) (retUids, retGids []specs.LinuxIDMapping, retErr error) {
 	if userns == nil {
 		// XXX: rata. What should we do in this case?
 		// If userns is not set, the kubelet doesn't support this option
@@ -327,7 +327,7 @@ func (c *criService) validateUserns(userns *runtime.UserNamespace) (retUids, ret
 	uidRuntimeMap := userns.GetUids()
 	gidRuntimeMap := userns.GetGids()
 
-	uids, gids, err := c.parseUsernsAllIDs(uidRuntimeMap, gidRuntimeMap)
+	uids, gids, err := parseUsernsAllIDs(uidRuntimeMap, gidRuntimeMap)
 	if err != nil {
 		retErr = fmt.Errorf("failed to parse user namespace mappings: %w", err)
 		return
